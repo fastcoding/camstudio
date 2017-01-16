@@ -337,11 +337,15 @@ UINT RecordAVIThread(LPVOID lParam) {
   string suffix="";
   if (idx==string::npos){
 	  basename=output_file;		 
+#ifdef DEBUG
 	  cerr<<"basename only:"<<output_file<<endl;
+#endif
   }else{
 	  basename=output_file.substr(0,idx);
 	  suffix=output_file.substr(idx+1);
+#ifdef DEBUG
 	  cerr<<basename<<" --- "<<suffix<<endl;
+#endif
   }
   int file_idx=0;
   while(gRecordState){
@@ -630,7 +634,9 @@ int RecordVideo(int top,int left,int width,int height,int fps,
 		fprintf(stderr,"Sleeping for %d msec (%d - ", toNextFrame, timeGetTime());
 #endif
 		Sleep(toNextFrame);
+#ifdef DEBUG
 		fprintf(stderr,"%d)\n", timeGetTime());
+#endif
 	}
 	// todo add dropped frame handling
 	
@@ -1393,7 +1399,7 @@ int main(int argc, char* argv[])
 	gRecordState = 0;
 	
 	free(obr);
-	Sleep(1000);
+	//Sleep(1000);
  
 
    
