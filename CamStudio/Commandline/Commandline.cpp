@@ -111,6 +111,7 @@ int num_compressor = 0;
 
 // User options:
 int seconds_to_record = -1;
+int slice_length=0; //added to split the recording into pieces
 int selected_compressor = -1;
 string output_file;
 int offset_left = 0;
@@ -330,28 +331,54 @@ UINT RecordAVIThread(LPVOID lParam) {
   int width=pscreen->width;
   int height=pscreen->height;
   int fps = frames_per_second;
-
-  const char *filepath = output_file.c_str();
-
-  //Test the validity of writing to the file
-  //Make sure the file to be created is currently not used by another application
-  int fileverified = 0;
-  while (!fileverified)
-  {
-    OFSTRUCT ofstruct;
-    HFILE fhandle = OpenFile(filepath, &ofstruct,
-        OF_SHARE_EXCLUSIVE | OF_WRITE  | OF_CREATE );
-    if (fhandle != HFILE_ERROR) {
-      fileverified = 1;
-      CloseHandle( (HANDLE) fhandle );
-      DeleteFile(filepath);
-    }
-    else {
-      cout << "Error: Could not open file for creation: " << filepath << endl;
-      ExitThread(1);
-    }
+  string ofile=output_file;
+  string::size_type idx=output_file.find(_T('.'));
+  string basename;
+  string suffix="";
+  if (idx==string::npos){
+	  basename=output_file;		 
+	  cerr<<"basename only:"<<output_file<<endl;
+  }else{
+	  basename=output_file.substr(0,idx);
+	  suffix=output_file.substr(idx+1);
+	  cerr<<basename<<" --- "<<suffix<<endl;
   }
-  RecordVideo(top, left, width, height, fps, filepath);
+  int file_idx=0;
+  while(gRecordState){
+	 if(file_idx>0){
+		 char buffer[8];
+		 ::sprintf_s(buffer,"_%d",file_idx);
+		 ofile=basename+buffer;
+		 ofile+=".";
+		 ofile+=suffix;
+	 }else{
+		 ofile=output_file;
+	 }
+	 const char *filepath = ofile.c_str();
+
+	 //Test the validity of writing to the file
+	 //Make sure the file to be created is currently not used by another application
+
+	 int fileverified = 0;
+	 while (!fileverified)
+	 {
+		 OFSTRUCT ofstruct;
+		 HFILE fhandle = OpenFile(filepath, &ofstruct,
+			 OF_SHARE_EXCLUSIVE | OF_WRITE  | OF_CREATE );
+		 if (fhandle != HFILE_ERROR) {
+			 fileverified = 1;
+			 CloseHandle( (HANDLE) fhandle );
+			 DeleteFile(filepath);
+		 }
+		 else {
+			 cout << "Error: Could not open file for creation: " << filepath << endl;
+			 ExitThread(1);
+		 }
+	 }  
+	 cerr<<"recording to "<<filepath<<endl;
+	 RecordVideo(top, left, width, height, fps, filepath);
+	 file_idx++;
+  }
 
   ExitThread(0);
 }
@@ -577,8 +604,11 @@ int RecordVideo(int top,int left,int width,int height,int fps,
   // Time when the next frame will be taken
   DWORD nextFrameAt = timeGetTime();
   DWORD nextFrameNumber = 0;
-
-  while (gRecordState) {  //repeatedly loop
+  DWORD stopTime=0;
+  if (slice_length>0){
+	  stopTime=::GetTickCount()+slice_length*1000;
+  }
+  while (gRecordState && (stopTime<=0||::GetTickCount()<stopTime)) {  //repeatedly loop
 	// TODO(dimator): Enable this via a command line argument:
 	//PrintRecordInformation();
 
@@ -592,11 +622,15 @@ int RecordVideo(int top,int left,int width,int height,int fps,
 
 	// Wait for next frame
 	int toNextFrame = nextFrameAt - timeGetTime();
-	printf("nextFrameAt: %d, timeGetTime: %d, toNextFrame: %d\n", nextFrameAt, timeGetTime(), toNextFrame);
+#ifdef DEBUG
+	fprintf(stderr,"nextFrameAt: %d, timeGetTime: %d, toNextFrame: %d\n", nextFrameAt, timeGetTime(), toNextFrame);
+#endif
 	if(toNextFrame > 0) {
-		printf("Sleeping for %d msec (%d - ", toNextFrame, timeGetTime());
+#ifdef DEBUG
+		fprintf(stderr,"Sleeping for %d msec (%d - ", toNextFrame, timeGetTime());
+#endif
 		Sleep(toNextFrame);
-		printf("%d)\n", timeGetTime());
+		fprintf(stderr,"%d)\n", timeGetTime());
 	}
 	// todo add dropped frame handling
 	
@@ -1179,7 +1213,14 @@ int ParseOptions(int argc, char *argv[]){
 	} else if(!OptionNameEqual("help", *it)){
       PrintUsage(TRUE);
       return 0;
-    }
+    } //this option is added by zhx - to support slice_length
+	else if (!OptionNameEqual("slice",*it)){
+	   if(++it == args.end()){
+        cout << "Expected slice seconds" << endl;
+        return 0;
+      }
+	   slice_length = atoi((*it).c_str());
+	}
   }
 
   return 1;
@@ -1192,6 +1233,7 @@ void PrintUsage(bool showCodecs = 1){
        << "-seconds: how many seconds to record for ('0' means to record until "
        << "a key is pressed)" << endl
 	   << "-fps: framerate to record with" << endl
+	   << "-slice: seconds per recording" << endl
        << "-help: this screen" << endl;
 
   if(!showCodecs)
@@ -1312,7 +1354,16 @@ int main(int argc, char* argv[])
 		rcUse.right = pscreen[i].right - 1;
 		rcUse.bottom = pscreen[i].bottom - 1;
 		// Write AVI file.
-		output_file = recordHere + "_" + (_itoa_s(i,buffer,2,10) + ".avi");// _itoa(i,buffer,10)+".avi";
+		_itoa_s(i,buffer,2,10);
+		string::size_type p=output_file.rfind(_T('.'));
+		string suffix;
+		if (p!=string::npos){
+			recordHere=output_file.substr(0,p);
+			suffix=output_file.substr(p+1);
+		}else{
+			suffix=".avi";
+		}
+		output_file = recordHere + "M" + string(buffer) + ".avi";// _itoa(i,buffer,10)+".avi";
 		strcpy_s(pscreen[i].outFile, output_file.c_str());
 		pscreen[i].index = i;
 
