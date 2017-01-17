@@ -29,6 +29,7 @@
 #include <vfw.h>
 #include <atltypes.h>
 #include <atlstr.h>
+#include "Shlwapi.h"
 
 #include <time.h>
 #include "Commandline.hpp"
@@ -112,6 +113,7 @@ int num_compressor = 0;
 // User options:
 int seconds_to_record = -1;
 int slice_length=0; //added to split the recording into pieces
+HANDLE hTermEvent=NULL;
 int selected_compressor = -1;
 string output_file;
 int offset_left = 0;
@@ -380,8 +382,14 @@ UINT RecordAVIThread(LPVOID lParam) {
 		 }
 	 }  
 	 cerr<<"recording to "<<filepath<<endl;
-	 RecordVideo(top, left, width, height, fps, filepath);
-	 file_idx++;
+	 if (RecordVideo(top, left, width, height, fps, filepath)<=0){
+		 if (::PathFileExists(filepath)) {
+			 cerr<<"actually 0 frames - being removed"<<endl;
+			 ::DeleteFile(filepath);
+		 }
+	 }else{
+		file_idx++;
+	 }
   }
 
   ExitThread(0);
@@ -391,6 +399,7 @@ UINT RecordAVIThread(LPVOID lParam) {
 // RecordVideo
 //
 // The main function used in the recording of video
+// return INT: frames captured in file.
 // Includes opening/closing avi file, initializing avi settings, capturing frames, applying cursor effects etc.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 int RecordVideo(int top,int left,int width,int height,int fps,
@@ -404,7 +413,7 @@ int RecordVideo(int top,int left,int width,int height,int fps,
   AVICOMPRESSOPTIONS FAR * aopts[1] = {&opts};
   HRESULT hr;
   WORD wVer;
-
+  int nFramesCaptured=0;
   actualwidth=width;
   actualheight=height;
 
@@ -633,7 +642,8 @@ int RecordVideo(int top,int left,int width,int height,int fps,
 #ifdef DEBUG
 		fprintf(stderr,"Sleeping for %d msec (%d - ", toNextFrame, timeGetTime());
 #endif
-		Sleep(toNextFrame);
+		//::Sleep(toNextFrame);
+		if (::WaitForSingleObject(hTermEvent,toNextFrame)==WAIT_OBJECT_0) break;
 #ifdef DEBUG
 		fprintf(stderr,"%d)\n", timeGetTime());
 #endif
@@ -793,15 +803,17 @@ int RecordVideo(int top,int left,int width,int height,int fps,
           alpbi->biSize +
           alpbi->biClrUsed * sizeof(RGBQUAD),
           alpbi->biSizeImage, // size of this frame
-        //AVIIF_KEYFRAME,      // flags....
-        0,    //Dependent n previous frame, not key frame
+        AVIIF_KEYFRAME,      // flags....
+        //0,    //Dependent n previous frame, not key frame
         NULL,
         NULL);
 
-      if (hr != AVIERR_OK)
-        break;
-
+      if (hr != AVIERR_OK){
+		  cerr<<"unable to write frame to stream,hr="<<hex<<hr<<endl;
+		  break;
+	  }
       nActualFrame ++ ;
+	  nFramesCaptured++;
       nCurrFrame = frametime;
       fRate = ((float) nCurrFrame)/fTimeLength;
       fActualRate = ((float) nActualFrame)/fTimeLength;
@@ -891,8 +903,8 @@ error:
 
   //Save the file on success
 
-  cout << "Recording finished" << endl;
-  return 0;
+  cout << "Recording finished:" << nFramesCaptured<<" frames recorded"<<endl;
+  return nFramesCaptured;
 }
 
 LPBITMAPINFOHEADER captureScreenFrame(int left,int top,int width, int height)
@@ -1290,6 +1302,60 @@ int ChooseBestCodec(){
   return -1;
 }
 
+int waitForDone(HANDLE *phs,int len){
+	int nerrors=0;
+	DWORD exitcode;	
+	if (!phs) return -1;
+	for (int i=0;i<len;i++){
+		if (NULL!=phs[i]){
+			cout << "Waiting for recording thread#"<<i<<" to exit..." << endl;
+			if(WaitForSingleObject(phs[i], 5000) == WAIT_TIMEOUT){
+				cout << "Error: Timed out!  The recorded video might have errors." << endl;
+				cout << "Killing thread..." << endl;
+				TerminateThread(phs[i], 1);
+				nerrors+=1000;
+			}
+
+			// Make sure the thread ended gracefully
+			GetExitCodeThread(phs[i], &exitcode);
+			if(exitcode){
+				cout << "Error: Recording thread ended abnormally" << endl;
+				nerrors++;
+			}
+			CloseHandle(phs[i]);
+			phs[i]=NULL;
+		}
+	}	
+	return nerrors;
+}
+
+BOOL requestTerminate()
+{
+	if (gRecordState){
+		gRecordState=0;
+		::SetEvent(hTermEvent);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+BOOL WINAPI consoleHandler(DWORD dwCtrlType)
+{
+	switch(dwCtrlType){
+	case CTRL_CLOSE_EVENT:
+	case CTRL_LOGOFF_EVENT:
+	case CTRL_SHUTDOWN_EVENT:
+		requestTerminate();
+		return TRUE;
+	case CTRL_C_EVENT:
+	case CTRL_BREAK_EVENT:
+		requestTerminate();
+		return TRUE;
+	default:
+		return FALSE;
+	}
+}
+
 int main(int argc, char* argv[])
 {
   DWORD tid = 0;
@@ -1345,9 +1411,10 @@ int main(int argc, char* argv[])
   //Detection of screens
   cout << "Detected displays:" << endl;
   EnumDisplayMonitors(NULL, NULL, MonitorEnumProc,(LPARAM) pscreen);
-
+  hTermEvent=::CreateEvent(NULL,TRUE,FALSE,NULL);
+  ::SetConsoleCtrlHandler(consoleHandler,true);
   int i=0;
-  char buffer[2];
+  char buffer[4];
   string recordHere = output_file;
 
 	for(i=0; i<=mon_count-1; i++){
@@ -1365,11 +1432,11 @@ int main(int argc, char* argv[])
 		string suffix;
 		if (p!=string::npos){
 			recordHere=output_file.substr(0,p);
-			suffix=output_file.substr(p+1);
+			suffix=output_file.substr(p);
 		}else{
 			suffix=".avi";
 		}
-		output_file = recordHere + "M" + string(buffer) + ".avi";// _itoa(i,buffer,10)+".avi";
+		output_file = recordHere + "M" + string(buffer) + suffix;// _itoa(i,buffer,10)+".avi";
 		strcpy_s(pscreen[i].outFile, output_file.c_str());
 		pscreen[i].index = i;
 
@@ -1381,80 +1448,30 @@ int main(int argc, char* argv[])
 
 		th[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)RecordAVIThread, (LPVOID) &pscreen[i], 0, &tid);
 
-  
-
-		// whole recording stuff goes ABOVE this line.
-		//cout<<"Sirka:" << p_obr[i].width << endl; // just some line for testing.
-	}
+	}	
 	if(seconds_to_record > 0){
 		cout << "Recording for " << seconds_to_record << " seconds" << endl;
-		::Sleep(seconds_to_record * 1000);
+		if (::WaitForSingleObject(hTermEvent,seconds_to_record * 1000)!=WAIT_OBJECT_0){
+			requestTerminate();
+		}
 	} else {
-		cout << "Enter any key to stop recording..." << endl;
-		cout.flush();
-		getchar();
+		while(gRecordState){
+			cout << "Enter quit to stop recording..." << endl;			
+			char line[80]={0};		
+			cin.getline(line,sizeof(line),'\n');			
+			if (string(line)=="quit") break;			
+			cin.clear();
+		}
+		requestTerminate();
 	}
+
+	exitcode=waitForDone(th,mon_count);
 	// Set gRecordState to 0, to end the while loop inside the recording thread.
 	// TODO(dimator): Maybe some better IPC, other than a global variable???
-	gRecordState = 0;
+	::CloseHandle(hTermEvent);
 	
-	free(obr);
-	//Sleep(1000);
- 
-
-   
-  //rcUse.left = offset_left;
-  //rcUse.top = offset_top;
-  //rcUse.right = 300;
-  //rcUse.bottom = 400;
-  //if(offset_bottom){
-	 // rcUse.bottom = offset_bottom - 1;
-  //}
-  //else{
-	 // rcUse.bottom = maxyScreen - 1;
-  //}
-  //if(offset_right){
-	 // rcUse.right = offset_right - 1;
-  //}
-  //else{
-	 // rcUse.right = maxxScreen - 1;
-  //}
-  ////cout << "Offset L:" << rcUse.left << endl;
-  ////cout << "Offset T:" << rcUse.top << endl;
-  ////cout << "Offset R:" << rcUse.right << endl; 
-  ////cout << "Offset B:" << rcUse.bottom << endl;
-  //
-  //gRecordState = 1;
-
-  //cout << "Creating recording thread..." << endl;
-  //cout << "Recording to: " << output_file << endl;
-
-  //if(seconds_to_record > 0){
-  //   cout << "Recording for " << seconds_to_record << " seconds" << endl;
-  //  ::Sleep(seconds_to_record * 1000);
-  //} else {
-  //  cout << "Enter any key to stop recording..." << endl;
-  //  cout.flush();
-  //  getchar();
-  //}
-
-  //// Set gRecordState to 0, to end the while loop inside the recording thread.
-  //// TODO(dimator): Maybe some better IPC, other than a global variable???
-  //gRecordState = 0;
-
-  cout << "Waiting for recording thread to exit..." << endl;
-  if(WaitForSingleObject(th[0], 5000) == WAIT_TIMEOUT){
-    cout << "Error: Timed out!  The recorded video might have errors." << endl;
-    cout << "Killing thread..." << endl;
-    TerminateThread(th[0], exitcode);
-  }
-
-  // Make sure the thread ended gracefully
-  GetExitCodeThread(th[0], &exitcode);
-  if(exitcode){
-    cout << "Error: Recording thread ended abnormally" << endl;
-    return exitcode;
-  }
-
-  return 0;
+	free(obr);	
+	free(th);
+	cout<<"done with code:"<<exitcode;
+  return exitcode;
 }
