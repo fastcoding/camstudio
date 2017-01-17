@@ -114,6 +114,7 @@ int num_compressor = 0;
 int seconds_to_record = -1;
 int slice_length=0; //added to split the recording into pieces
 HANDLE hTermEvent=NULL;
+BOOL bWaitPipe=TRUE;
 int selected_compressor = -1;
 string output_file;
 int offset_left = 0;
@@ -1238,6 +1239,8 @@ int ParseOptions(int argc, char *argv[]){
         return 0;
       }
 	   slice_length = atoi((*it).c_str());
+	}else if (!OptionNameEqual("daemon",*it)){
+		bWaitPipe=FALSE;
 	}else if (!OptionNameEqual("quit",*it)){
 		hTermEvent=::OpenEvent(EVENT_MODIFY_STATE ,FALSE,TERM_EVT_NAME);
 		if (hTermEvent==NULL){
@@ -1262,6 +1265,7 @@ void PrintUsage(bool showCodecs = 1){
 	   << "-fps: framerate to record with" << endl
 	   << "-slice: seconds per recording" << endl
 	   << "-quit: to stop the existing instance"<<endl
+	   << "-daemon : can only stop by -quit"<<endl
        << "-help: this screen" << endl;
 
   if(!showCodecs)
@@ -1372,7 +1376,7 @@ int main(int argc, char* argv[])
   DWORD exitcode = 0;
   HDC hScreenDC;
   int mon_count = GetSystemMetrics(SM_CMONITORS); // get nubmer of monitors
-
+  
   HANDLE* th = (HANDLE *) malloc(sizeof(HANDLE) * mon_count);
   //PAVIFILE* pfile = (PAVIFILE *) malloc(sizeof(PAVIFILE) * mon_count);
 
@@ -1466,34 +1470,18 @@ int main(int argc, char* argv[])
 			requestTerminate();
 		}
 	} else {
-		HANDLE eventHandles[] = {
-        ::GetStdHandle(STD_INPUT_HANDLE),
-		hTermEvent
-        // ... add more handles and/or sockets here
-        };
-				
-		bool running=true;
-		while(running){
-			cout << "Enter q to stop recording..." << endl;	
-			 DWORD res = ::WaitForMultipleObjects(sizeof(eventHandles)/sizeof(eventHandles[0]), 
-        &eventHandles[0], FALSE, INFINITE);
-			switch(res){
-			case WAIT_OBJECT_0:			
-				{
-					INPUT_RECORD record;
-					DWORD numRead;
-					if (ReadConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &record, 1, &numRead)) {
-						// hmm handle this error somehow...        					
-						if (record.Event.KeyEvent.uChar.AsciiChar=='q'){
-							 running=false;
-						}
-					}
+		
+		if (bWaitPipe){
+			char buffer[80];
+			bool running=true;
+			for(;;){
+				cin.getline(buffer,80,'\n');
+				if (string(buffer)=="quit"){
 					break;
 				}
-			case WAIT_OBJECT_0+1:
-				running=false;
-				break;
 			}
+		}else{
+			::WaitForSingleObject(hTermEvent,INFINITE);
 		}
 		requestTerminate();
 	}
