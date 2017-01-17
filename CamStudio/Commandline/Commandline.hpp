@@ -11,8 +11,8 @@ public:
 	int bottom;
 	int width;
 	int height;
-	char outFile[50];
-	char dispName[50];
+	char outFile[256];
+	char dispName[256];
 	screen(){
 		
 	};
