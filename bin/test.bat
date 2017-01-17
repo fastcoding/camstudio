@@ -1,0 +1,1 @@
+CamCommandLine.exe -codec 0 -fps 25 -seconds 12 -slice 3 -outfile test.avi >test.log
