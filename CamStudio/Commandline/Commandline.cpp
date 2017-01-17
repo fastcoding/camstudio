@@ -13,8 +13,8 @@
 // Command line author: dimator(AT)google(DOT)com
 // Multi screen support: karol(dot)toth(at)gmail(dot)com
 
-#define CAMSTUDIO_CL_VERSION "0.2"
-
+#define CAMSTUDIO_CL_VERSION "0.3"
+#define TERM_EVT_NAME "camstudio.commandline"
 #include <algorithm>
 #include <string>
 #include <cstring>
@@ -350,7 +350,7 @@ UINT RecordAVIThread(LPVOID lParam) {
 #endif
   }
   int file_idx=0;
-  while(gRecordState){
+  while(::WaitForSingleObject(hTermEvent,0)!=WAIT_OBJECT_0){
 	 if(file_idx>0){
 		 char buffer[8];
 		 ::sprintf_s(buffer,"_%d",file_idx);
@@ -621,7 +621,7 @@ int RecordVideo(int top,int left,int width,int height,int fps,
   if (slice_length>0){
 	  stopTime=::GetTickCount()+slice_length*1000;
   }
-  while (gRecordState && (stopTime<=0||::GetTickCount()<stopTime)) {  //repeatedly loop
+  while (::WaitForSingleObject(hTermEvent,0)!=WAIT_OBJECT_0 && (stopTime<=0||::GetTickCount()<stopTime)) {  //repeatedly loop
 	// TODO(dimator): Enable this via a command line argument:
 	//PrintRecordInformation();
 
@@ -1238,6 +1238,15 @@ int ParseOptions(int argc, char *argv[]){
         return 0;
       }
 	   slice_length = atoi((*it).c_str());
+	}else if (!OptionNameEqual("quit",*it)){
+		hTermEvent=::OpenEvent(EVENT_MODIFY_STATE ,FALSE,TERM_EVT_NAME);
+		if (hTermEvent==NULL){
+			cerr<<"failed to quit - NO instance found"<<endl;
+		}else{
+			::SetEvent(hTermEvent);
+			::CloseHandle(hTermEvent);
+		}
+		return 0;
 	}
   }
 
@@ -1252,6 +1261,7 @@ void PrintUsage(bool showCodecs = 1){
        << "a key is pressed)" << endl
 	   << "-fps: framerate to record with" << endl
 	   << "-slice: seconds per recording" << endl
+	   << "-quit: to stop the existing instance"<<endl
        << "-help: this screen" << endl;
 
   if(!showCodecs)
@@ -1411,7 +1421,8 @@ int main(int argc, char* argv[])
   //Detection of screens
   cout << "Detected displays:" << endl;
   EnumDisplayMonitors(NULL, NULL, MonitorEnumProc,(LPARAM) pscreen);
-  hTermEvent=::CreateEvent(NULL,TRUE,FALSE,NULL);
+
+  hTermEvent=::CreateEvent(NULL,TRUE,FALSE,TERM_EVT_NAME);
   ::SetConsoleCtrlHandler(consoleHandler,true);
   int i=0;
   char buffer[4];
@@ -1455,12 +1466,34 @@ int main(int argc, char* argv[])
 			requestTerminate();
 		}
 	} else {
-		while(gRecordState){
-			cout << "Enter quit to stop recording..." << endl;			
-			char line[80]={0};		
-			cin.getline(line,sizeof(line),'\n');			
-			if (string(line)=="quit") break;			
-			cin.clear();
+		HANDLE eventHandles[] = {
+        ::GetStdHandle(STD_INPUT_HANDLE),
+		hTermEvent
+        // ... add more handles and/or sockets here
+        };
+				
+		bool running=true;
+		while(running){
+			cout << "Enter q to stop recording..." << endl;	
+			 DWORD res = ::WaitForMultipleObjects(sizeof(eventHandles)/sizeof(eventHandles[0]), 
+        &eventHandles[0], FALSE, INFINITE);
+			switch(res){
+			case WAIT_OBJECT_0:			
+				{
+					INPUT_RECORD record;
+					DWORD numRead;
+					if (ReadConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &record, 1, &numRead)) {
+						// hmm handle this error somehow...        					
+						if (record.Event.KeyEvent.uChar.AsciiChar=='q'){
+							 running=false;
+						}
+					}
+					break;
+				}
+			case WAIT_OBJECT_0+1:
+				running=false;
+				break;
+			}
 		}
 		requestTerminate();
 	}
