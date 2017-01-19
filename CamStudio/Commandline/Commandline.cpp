@@ -442,10 +442,10 @@ int RecordVideo(int top,int left,int width,int height,int fps,
         compressor_info[selected_compressor].fccHandler, ICMODE_QUERY);
     if (hic) {
 
-      int left =0;
-	  int top=0;
-	  int width=0;
-	  int height=0;
+      int l =0;
+	  int t=0;
+	  int w=0;
+	  int h=0;
       int align = 1;
       while   (ICERR_OK!=ICCompressQuery(hic, alpbi, NULL))
       {
@@ -454,19 +454,19 @@ int RecordVideo(int top,int left,int width,int height,int fps,
         if (align>8) break;
         int wm = (width % align);
         if (wm > 0) {
-          width = width + (align - wm);
-          if (width>maxxScreen)
-            width = width - wm;
+          w = width + (align - wm);
+          if (w>maxxScreen)
+            w = width - wm;
         }
         int hm = (height % align);
         if (hm > 0) {
-          height = height + (align - hm);
-          if (height>maxyScreen)
-            width = height - hm;
+          h = height + (align - hm);
+          if (h>maxyScreen)
+            h = height - hm;
         }
         if (alpbi)
           FreeFrame(alpbi);
-        alpbi = captureScreenFrame(left,top,width, height);
+        alpbi = captureScreenFrame(l,t,w, h);
       }
 
       //if succeed with new width/height, use the new width and height
@@ -477,11 +477,10 @@ int RecordVideo(int top,int left,int width,int height,int fps,
       }
       else if (align <= 8) {
           //Compressor can work if the dimensions is adjusted slightly
-          width=width;
-          height=height;
-
           actualwidth=width;
           actualheight=height;
+		  width=w;
+          height=h;
       }
       else {
           compfccHandler = mmioFOURCC('M', 'S', 'V', 'C');
@@ -578,7 +577,7 @@ int RecordVideo(int top,int left,int width,int height,int fps,
 
   //The 1 here indicates only 1 stream
   //if (!AVISaveOptions(NULL, 0, 1, &ps, (LPAVICOMPRESSOPTIONS *) &aopts))
-  //        goto error;
+    //      goto error;
 
   hr = AVIMakeCompressedStream(&psCompressed, ps, &opts, NULL);
   if (hr != AVIERR_OK)    goto error;
@@ -1286,7 +1285,7 @@ int ChooseBestCodec(){
   //    CamStudio Lossless Codec v1.0 (not usually available)
   //    Microsoft Video 1
   //    Cinepak Codec by Radius
-  //    Indeo« video 5.10
+  //    Indeo?video 5.10
   //
   // If available, CamStudio Lossless should be used.  Otherwise, use
   // Microsoft Video, Cinepak Codec or Indeo.  If none of these are

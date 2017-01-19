@@ -1,7 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LocalDebuggerCommandArguments>-daemon -codec 0 -fps 15 -slice 300 -outfile E:\hanxi\build-agui_all-Desktop_Qt_5_2_1_MSVC2012_OpenGL_64bit-Debug\bin\capture\70117_152604.avi</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>-codec 0 -fps 15 -slice 3000 -outfile c:\temp\70117_152604.avi</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <RemoteDebuggerCommandArguments>-codec 0 -fps 15 -slice 3000 -outfile c:\temp\test.avi</RemoteDebuggerCommandArguments>
   </PropertyGroup>
 </Project>
