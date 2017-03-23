@@ -23,8 +23,8 @@ public:
 			this->right = right;
 			this->top = top;
 			this->bottom = bottom;
-			this->width = (right - left) - 1;
-			this->height = (bottom - top) - 1;
+			this->width = (right - left) ;
+			this->height = (bottom - top);
 			return true;
 		}
 		else{

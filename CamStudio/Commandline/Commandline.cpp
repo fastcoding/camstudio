@@ -856,7 +856,7 @@ error:
 
   }
 
-  AVISaveOptionsFree(1,(LPAVICOMPRESSOPTIONS FAR *) &aopts);
+  //AVISaveOptionsFree(1,(LPAVICOMPRESSOPTIONS FAR *) &aopts);
 
   if (pfile)
     AVIFileClose(pfile);
